@@ -1,5 +1,8 @@
 #include "ros/ros.h"
 #include "sensor_msgs/Imu.h"
+#include "sensor_msgs/LaserScan.h"
+#include "std_msgs/Bool.h"
+#include "std_msgs/Float32.h"
 #include <tf/transform_datatypes.h>
 #include "swc_msgs/Control.h"
 #include "swc_msgs/Waypoints.h"
@@ -15,6 +18,8 @@ int waypointIndex = 1;
 double latitude;
 double longitude;
 
+bool bumper = false;
+
 swc_msgs::Waypoints waypoints;
 
 double angleDiff(double angle1, double angle2) {
@@ -27,7 +32,7 @@ double angleDiff(double angle1, double angle2) {
 
 void controlTimerCallback(const ros::TimerEvent& timer_event) {
     swc_msgs::Control controlMsg;
-    controlMsg.speed = 100;
+
     // Check if the robot has hit the current waypoint (TODO: how close counts as a hit?)
     if (sqrt(pow(waypoints.response.waypoints[waypointIndex].longitude  - longitude, 2.0) + pow(waypoints.response.waypoints[waypointIndex].latitude  - latitude, 2.0)) < 0.00001) {
        if (waypointIndex < 4) {
@@ -39,9 +44,15 @@ void controlTimerCallback(const ros::TimerEvent& timer_event) {
     double diff = angleDiff(targetHeading, heading);
     //ROS_INFO("Current heading: [%f], Target: [%f], Diff: [%f]", heading, targetHeading, diff);
     //ROS_INFO("[%f]", sqrt(pow(waypoints.response.waypoints[waypointIndex].longitude  - longitude, 2.0) + pow(waypoints.response.waypoints[waypointIndex].latitude  - latitude, 2.0)));
-
-    // Set turn angle proportional to the difference between the target heading and the current heading
-    controlMsg.turn_angle = 30.0 * diff / M_PI;
+    if (!bumper) {
+        controlMsg.speed = 10;
+        // Set turn angle proportional to the difference between the target heading and the current heading
+        controlMsg.turn_angle = 30.0 * diff / M_PI;
+    } 
+    else {
+        controlMsg.speed = -10;
+        controlMsg.turn_angle = 30;
+    }
 
     // Publish the message to /sim/control so the simulator receives it
     g_control_pub.publish(controlMsg);
@@ -57,6 +68,30 @@ void gpsCallback(const swc_msgs::Gps::ConstPtr& msg) {
     longitude = msg->longitude;
 }
 
+void bumperCallback(const std_msgs::Bool::ConstPtr& msg) {
+    ROS_INFO("Bumper: [%d]", msg->data);
+    bumper = msg->data;
+}
+
+void velocityCallback(const std_msgs::Float32::ConstPtr& msg) {
+    //ROS_INFO("Velocity: [%f]", msg->data);
+}
+
+void lidarCallback(const sensor_msgs::LaserScan::ConstPtr& msg) {
+    
+    /*
+    if (bumper) {
+        for (int i = 0; i < msg->ranges.size(); i++) {
+            ROS_INFO("Range %d: [%f]", i, msg->ranges[i]);
+            if ((msg->ranges[i] < msg->range_max) && (msg->ranges[i] > msg->range_min)) {
+                
+            }
+        }
+    }
+    */
+    //ROS_INFO("[%f]", msg->angle_min);
+}
+
 int main(int argc, char **argv)
 {
     // Initalize our node in ROS
@@ -68,6 +103,9 @@ int main(int argc, char **argv)
 
     ros::Subscriber imuSub = node.subscribe("/sim/imu", 1, imuCallback);
     ros::Subscriber gpsSub = node.subscribe("/sim/gps" , 1, gpsCallback);
+    ros::Subscriber bumperSub = node.subscribe("/sim/bumper", 1, bumperCallback);
+    ros::Subscriber velocitySub = node.subscribe("/sim/velocity", 1, velocityCallback);
+    ros::Subscriber lidarSub = node.subscribe("/scan", 1, lidarCallback);
 
     // Create and wait for Waypoints service
     ros::ServiceClient waypoint_service = node.serviceClient<swc_msgs::Waypoints>("/sim/waypoints");
