@@ -20,6 +20,13 @@ double longitude;
 
 bool bumper = false;
 
+bool closeLeft = false;
+bool closeRight = false;
+bool closeFront = false;
+bool closeBack = false;
+
+bool clearAhead = false;
+
 swc_msgs::Waypoints waypoints;
 
 double angleDiff(double angle1, double angle2) {
@@ -44,14 +51,39 @@ void controlTimerCallback(const ros::TimerEvent& timer_event) {
     double diff = angleDiff(targetHeading, heading);
     //ROS_INFO("Current heading: [%f], Target: [%f], Diff: [%f]", heading, targetHeading, diff);
     //ROS_INFO("[%f]", sqrt(pow(waypoints.response.waypoints[waypointIndex].longitude  - longitude, 2.0) + pow(waypoints.response.waypoints[waypointIndex].latitude  - latitude, 2.0)));
-    if (!bumper) {
-        controlMsg.speed = 10;
-        // Set turn angle proportional to the difference between the target heading and the current heading
-        controlMsg.turn_angle = 30.0 * diff / M_PI;
-    } 
+
+    if (closeLeft) {
+        // Turn right
+        controlMsg.turn_angle = 15;
+    }
+    else if (closeRight) {
+        // Turn left
+        controlMsg.turn_angle = -15;
+    }
     else {
-        controlMsg.speed = -10;
-        controlMsg.turn_angle = 30;
+        controlMsg.turn_angle = 30.0 * diff / M_PI;
+    }
+
+    if (closeFront || bumper) {
+        if (closeBack) {
+            controlMsg.speed = -1;
+        }
+        else {
+            controlMsg.speed = -3;
+        }
+        if (controlMsg.turn_angle < 0) {
+            controlMsg.turn_angle = 15;
+        }
+        else {
+            controlMsg.turn_angle = -15;
+        }
+    }
+    else {
+        controlMsg.speed = 3;
+    }
+
+    if (clearAhead) {
+        controlMsg.speed = 9001;
     }
 
     // Publish the message to /sim/control so the simulator receives it
@@ -78,7 +110,61 @@ void velocityCallback(const std_msgs::Float32::ConstPtr& msg) {
 }
 
 void lidarCallback(const sensor_msgs::LaserScan::ConstPtr& msg) {
-    
+    ROS_INFO("[%f]", msg->ranges[0]);
+    closeLeft = false;
+    closeRight = false;
+    closeFront = false;
+    closeBack = false;
+    clearAhead = true;
+
+    for (int i = 0; i < 10; i++) {
+        if (msg->ranges[i] < 1 && msg->ranges[i] > 0) {
+            closeFront = true;
+            break;
+        }
+    }
+    for (int i = 350; i < 360; i++) {
+        if (msg->ranges[i] < 1 && msg->ranges[i] > 0) {
+            closeFront = true;
+            break;
+        }
+    }
+
+    for (int i = 10; i < 30; i++) {
+        if (msg->ranges[i] < 1 && msg->ranges[i] > 0) {
+            closeLeft = true;
+            break;
+        }
+    }
+
+    for (int i = 330; i < 350; i++) {
+        if (msg->ranges[i] < 1 && msg->ranges[i] > 0) {
+            closeRight = true;
+            break;
+        }
+    }
+
+    for (int i = 150; i < 210; i++) {
+        if (msg->ranges[i] < 1 && msg->ranges[i] > 0) {
+            closeBack = true;
+            break;
+        }
+    }
+
+    for (int i = 0; i < 40; i++) {
+        if (msg->ranges[i] < 4 && msg->ranges[i] > 0) {
+            clearAhead = false;
+            break;
+        }
+    }
+    for (int i = 320; i < 360; i++) {
+        if (msg->ranges[i] < 4 && msg->ranges[i] > 0) {
+            clearAhead = false;
+            break;
+        }
+    }
+
+
     /*
     if (bumper) {
         for (int i = 0; i < msg->ranges.size(); i++) {
