@@ -24,6 +24,7 @@ bool closeLeft = false;
 bool closeRight = false;
 bool closeFront = false;
 bool closeBack = false;
+bool closeAny = false;
 
 bool clearAhead = false;
 
@@ -43,6 +44,7 @@ void controlTimerCallback(const ros::TimerEvent& timer_event) {
     // Check if the robot has hit the current waypoint (TODO: how close counts as a hit?)
     if (sqrt(pow(waypoints.response.waypoints[waypointIndex].longitude  - longitude, 2.0) + pow(waypoints.response.waypoints[waypointIndex].latitude  - latitude, 2.0)) < 0.00001) {
        if (waypointIndex < 4) {
+           ROS_INFO("Waypoint %d reached?", waypointIndex);
            // Go to the next waypoint
            ++waypointIndex;
        }
@@ -53,38 +55,47 @@ void controlTimerCallback(const ros::TimerEvent& timer_event) {
     //ROS_INFO("[%f]", sqrt(pow(waypoints.response.waypoints[waypointIndex].longitude  - longitude, 2.0) + pow(waypoints.response.waypoints[waypointIndex].latitude  - latitude, 2.0)));
 
     if (closeLeft) {
-        // Turn right
+        // Turn right at 10 to 20 degrees
         controlMsg.turn_angle = 15;
     }
     else if (closeRight) {
-        // Turn left
+        // Turn left at 10 to 20 degrees
         controlMsg.turn_angle = -15;
     }
     else {
+        // Aim for waypoint
         controlMsg.turn_angle = 30.0 * diff / M_PI;
     }
 
     if (closeFront || bumper) {
-        if (closeBack) {
+        if (closeAny || closeBack) {
             controlMsg.speed = -1;
         }
         else {
-            controlMsg.speed = -3;
+            // Reverse at 2 to 4 speed
+            controlMsg.speed = rand() % 2 - 4; 
         }
-        if (controlMsg.turn_angle < 0) {
-            controlMsg.turn_angle = 15;
-        }
-        else {
-            controlMsg.turn_angle = -15;
+        if (closeLeft || closeRight) {
+            controlMsg.turn_angle = -1 * controlMsg.turn_angle;
         }
     }
     else {
-        controlMsg.speed = 3;
+        if (closeAny) {
+            controlMsg.speed = 1;
+        }
+        else if (clearAhead) {
+            controlMsg.speed = 6;
+        }
+        else {
+            controlMsg.speed = 3;
+        }
     }
-
-    if (clearAhead) {
-        controlMsg.speed = 9001;
+/*
+    if (controlMsg.speed < 0) {
+        controlMsg.turn_angle = controlMsg.turn_angle * -1;
     }
+*/
+    //ROS_INFO("Turn angle: [%f]", controlMsg.turn_angle);
 
     // Publish the message to /sim/control so the simulator receives it
     g_control_pub.publish(controlMsg);
@@ -110,11 +121,12 @@ void velocityCallback(const std_msgs::Float32::ConstPtr& msg) {
 }
 
 void lidarCallback(const sensor_msgs::LaserScan::ConstPtr& msg) {
-    ROS_INFO("[%f]", msg->ranges[0]);
+    //ROS_INFO("[%f]", msg->ranges[0]);
     closeLeft = false;
     closeRight = false;
     closeFront = false;
     closeBack = false;
+    closeAny = false;
     clearAhead = true;
 
     for (int i = 0; i < 10; i++) {
@@ -147,6 +159,13 @@ void lidarCallback(const sensor_msgs::LaserScan::ConstPtr& msg) {
     for (int i = 150; i < 210; i++) {
         if (msg->ranges[i] < 1 && msg->ranges[i] > 0) {
             closeBack = true;
+            break;
+        }
+    }
+
+    for (int i = 0; i < 360; i++) {
+        if (msg->ranges[i] < 0.5 && msg->ranges[i] > 0) {
+            closeAny = true;
             break;
         }
     }
